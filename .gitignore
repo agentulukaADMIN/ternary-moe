@@ -1,0 +1,13 @@
+# big / re-downloadable — models live on Hugging Face (UlukaDev/bitnet-ternary-moe-gguf)
+fabric/
+models/
+adapters/
+router/
+
+# scratch & logs
+__pycache__/
+data/_*
+data/server.log
+data/results_*.jsonl
+data/ggml_dump.txt
+*.zip

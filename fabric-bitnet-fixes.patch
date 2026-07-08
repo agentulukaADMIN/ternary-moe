@@ -1,0 +1,68 @@
+diff --git a/convert_hf_to_gguf.py b/convert_hf_to_gguf.py
+index 3eb8546..455d43b 100755
+--- a/convert_hf_to_gguf.py
++++ b/convert_hf_to_gguf.py
+@@ -292,6 +292,13 @@ class ModelBase:
+                 data = data & 3
+                 data = (data.float() - 1).reshape((orig_shape[0] * 4, *orig_shape[1:]))
+ 
++                # transformers has two BitNet linear classes with opposite
++                # weight_scale semantics: AutoBitLinear ("autobitlinear", used
++                # by microsoft/bitnet-b1.58-2B-4T) MULTIPLIES the output by
++                # weight_scale, while the packed BitLinear DIVIDES by it
++                # (inverted scale). Match the class the checkpoint declares.
++                if quant_config.get("linear_class") == "autobitlinear":
++                    return data * scale.float()
+                 # The scale is inverted
+                 return data / scale.float()
+ 
+@@ -3513,7 +3520,15 @@ class BitnetModel(TextModel):
+                 packed = data_torch.to(torch.uint8)
+                 unpacked = self._unpack_bitnet_weights(packed)
+                 scale_value = scale_tensor.reshape(-1)[0].item()
+-                data_torch = unpacked * scale_value
++                # AutoBitLinear ("autobitlinear") multiplies its output by
++                # weight_scale; the packed BitLinear divides (inverted scale).
++                # See dequant_bitnet() above, which normally handles this
++                # before tensors ever reach modify_tensors.
++                lc = (self.hparams.get("quantization_config") or {}).get("linear_class")
++                if lc == "autobitlinear":
++                    data_torch = unpacked * scale_value
++                else:
++                    data_torch = unpacked / scale_value
+                 ternary_weight = True
+ 
+         if any(self.match_model_tensor_name(new_name, key, bid) for key in [
+@@ -3525,8 +3540,15 @@ class BitnetModel(TextModel):
+             gguf.MODEL_TENSOR.FFN_DOWN,
+             gguf.MODEL_TENSOR.FFN_GATE,
+         ]) and not ternary_weight:
+-            # transform weight into 1/0/-1 (in fp32)
+-            data_torch = self.weight_quant(data_torch)
++            # Pre-quantized BitNet checkpoints (quantization_config.quant_method
++            # == "bitnet", e.g. microsoft/bitnet-b1.58-2B-4T) are already
++            # dequantized to ternary * (1/weight_scale) by dequant_bitnet() at
++            # load time; re-running weight_quant() here would collapse every
++            # tensor to +-mean(|w|), destroying the per-tensor scale.
++            quant_config = self.hparams.get("quantization_config") or {}
++            if quant_config.get("quant_method") != "bitnet":
++                # transform weight into 1/0/-1 (in fp32)
++                data_torch = self.weight_quant(data_torch)
+ 
+         yield from super().modify_tensors(data_torch, name, bid)
+ 
+diff --git a/src/models/bitnet.cpp b/src/models/bitnet.cpp
+index 7e8125d..367a04a 100644
+--- a/src/models/bitnet.cpp
++++ b/src/models/bitnet.cpp
+@@ -129,7 +129,9 @@ llama_model_bitnet::graph::graph(const llama_model & model, const llm_graph_para
+                 model.layers[il].ffn_gate, NULL, model.layers[il].ffn_gate_s,
+                 NULL,                      NULL, NULL,
+                 NULL,
+-                LLM_FFN_SILU, LLM_FFN_PAR, il);
++                // microsoft/bitnet-b1.58-2B-4T uses squared ReLU (hidden_act
++                // "relu2"), not the SiLU of the older 1bitLLM b1.58 models
++                LLM_FFN_RELU_SQR, LLM_FFN_PAR, il);
+         cb(cur, "ffn_sub_out", il);
+ 
+         cur = build_norm(cur,
