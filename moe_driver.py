@@ -116,7 +116,7 @@ if __name__ == "__main__":
     print("\n\033[92m● Ready!\033[0m  Ask a question, for example:")
     print("   What is 47 times 62?")
     print("   Convert 1994 to Roman numerals")
-    print("Tip: press Ctrl+C to stop an answer early. "
+    print("\033[91mTip: press Ctrl+C to stop an answer early.\033[0m "
           "Close the window when you are done.")
 
     while True:
