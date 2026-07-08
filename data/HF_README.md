@@ -30,7 +30,13 @@ Replaces a ~5GB bf16 setup at about 1/5 the memory.
 | `mult-f16.gguf` | 55MB | 2-digit multiplication expert (LoRA r=32 α=64, FFN modules only) |
 | `roman-f16.gguf` | 55MB | Roman numerals expert (same shape) |
 | `fabric-bitnet-fixes.patch` | 3KB | **required** engine fixes (see below) |
+| `moe_driver.py` | — | **the chat program** — routes each question, streams the answer live |
+| `START HERE.bat` | — | one-click Windows launcher (starts server + chat) |
 | `results.md` | — | full evaluation report |
+
+`moe_driver.py` and `START HERE.bat` here are the **current, canonical
+versions** — the same as on GitHub. Download these rather than copying from
+older forum posts or snippets.
 
 ## Results
 

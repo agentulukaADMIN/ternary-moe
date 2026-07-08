@@ -113,8 +113,11 @@ if __name__ == "__main__":
 
     import os
     os.system("")  # enables ANSI colors in the classic Windows console
-    print("\n\033[92m● Ready!\033[0m  Ask a question below.")
-    print("Tip: press Ctrl+C to stop an answer early.")
+    print("\n\033[92m● Ready!\033[0m  Ask a question, for example:")
+    print("   What is 47 times 62?")
+    print("   Convert 1994 to Roman numerals")
+    print("Tip: press Ctrl+C to stop an answer early. "
+          "Close the window when you are done.")
 
     while True:
         try:
