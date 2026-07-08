@@ -70,7 +70,7 @@ Two findings worth knowing if you try something similar:
 
 | file | purpose |
 |---|---|
-| `moe_driver.py` | interactive chat: routes each question and queries the server |
+| `moe_driver.py` | interactive chat: routes each question and queries the server; answers stream in live, Ctrl+C cancels the current answer without quitting |
 | `eval.py` | scoring harness (per-expert accuracy, coherence, routing accuracy) |
 | `convert_lora_bitnet.py` | converts PEFT LoRA adapters to GGUF for this base (fixes two converter bugs) |
 | `fabric-bitnet-fixes.patch` | **required** — 3 fixes to the inference engine (see below) |

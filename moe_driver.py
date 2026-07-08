@@ -5,9 +5,14 @@ The router (MiniLM embeddings + logistic regression, used AS-IS from
 UlukaDev/bitnet-moe-router) picks an expert per query; the expert is activated
 on the running llama-server via POST /lora-adapters (scale 1.0 on the chosen
 adapter, 0.0 on the rest). The ternary base is never modified.
+
+Answers stream in word by word. Ctrl+C cancels the current answer (not the
+program); anything typed while the model is busy is discarded.
 """
 
 import argparse
+import json
+import sys
 
 import joblib
 import requests
@@ -19,15 +24,28 @@ ROUTER = "UlukaDev/bitnet-moe-router"
 CALC = ("You are a careful calculator. Work step by step, then end "
         "with exactly 'The answer is X'.")
 # Server --lora load order: 0 = mult, 1 = roman.
-# NOTE: keys must match the raw labels router.joblib emits (verified live
-# with --debug; fix here if the router was trained with different strings).
+# Keys match the raw labels router.joblib emits (verified live).
 LABEL_TO_ID = {"mult": 0, "roman": 1}
+ID_TO_NAME = {v: k for k, v in LABEL_TO_ID.items()}
 SYSTEM = {0: CALC, 1: CALC}             # per-id system prompt; extend later
+
+SERVER_DOWN_HINT = ("\nThe AI server isn't running. "
+                    "Double-click START HERE.bat first, then try again.")
 
 print("Loading router + embedder...")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 router = joblib.load(hf_hub_download(ROUTER, "router.joblib"))
 DEBUG = False
+
+
+def flush_typed_input() -> None:
+    """Discard anything typed while the model was busy (Windows console)."""
+    try:
+        import msvcrt
+        while msvcrt.kbhit():
+            msvcrt.getwch()
+    except ImportError:
+        pass
 
 
 def route(q: str) -> str:
@@ -42,18 +60,40 @@ def route(q: str) -> str:
 def set_adapter(idx: int) -> None:
     scales = [{"id": i, "scale": 1.0 if i == idx else 0.0}
               for i in LABEL_TO_ID.values()]
-    requests.post(f"{SERVER}/lora-adapters", json=scales).raise_for_status()
+    requests.post(f"{SERVER}/lora-adapters", json=scales, timeout=30).raise_for_status()
 
 
 def answer(q: str) -> tuple[int, str]:
+    """Route, activate the expert, and stream the answer to stdout."""
+    print("thinking...", end="\r", flush=True)
     idx = LABEL_TO_ID.get(route(q), 0)
     set_adapter(idx)
-    r = requests.post(f"{SERVER}/v1/chat/completions", json={
+    print(f"[expert id {idx} — {ID_TO_NAME[idx]}]")
+
+    resp = requests.post(f"{SERVER}/v1/chat/completions", json={
         "messages": [{"role": "system", "content": SYSTEM[idx]},
                      {"role": "user",   "content": q}],
-        "max_tokens": 384, "temperature": 0.0})
-    r.raise_for_status()
-    return idx, r.json()["choices"][0]["message"]["content"]
+        "max_tokens": 384, "temperature": 0.0, "stream": True,
+    }, stream=True, timeout=600)
+    resp.raise_for_status()
+
+    parts: list[str] = []
+    try:
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            payload = line[len("data: "):]
+            if payload.strip() == "[DONE]":
+                break
+            chunk = json.loads(payload).get("choices", [{}])[0]
+            delta = chunk.get("delta", {}).get("content")
+            if delta:
+                parts.append(delta)
+                print(delta, end="", flush=True)
+    finally:
+        resp.close()
+    print()
+    return idx, "".join(parts)
 
 
 if __name__ == "__main__":
@@ -65,12 +105,25 @@ if __name__ == "__main__":
     SERVER = args.server
     DEBUG = args.debug
 
+    try:
+        requests.get(f"{SERVER}/health", timeout=3).raise_for_status()
+    except requests.exceptions.RequestException:
+        print(SERVER_DOWN_HINT)
+        sys.exit(1)
+
     while True:
         try:
             q = input("\n> ").strip()
-            if not q:
-                continue
-            idx, txt = answer(q)
-            print(f"[expert id {idx}]\n{txt}")
         except (KeyboardInterrupt, EOFError):
             break
+        if not q:
+            continue
+        try:
+            answer(q)
+        except KeyboardInterrupt:
+            print("\n(answer cancelled — ask something else)")
+        except requests.exceptions.ConnectionError:
+            print(SERVER_DOWN_HINT)
+            break
+        finally:
+            flush_typed_input()
