@@ -111,6 +111,11 @@ if __name__ == "__main__":
         print(SERVER_DOWN_HINT)
         sys.exit(1)
 
+    import os
+    os.system("")  # enables ANSI colors in the classic Windows console
+    print("\n\033[92m● Ready!\033[0m  Ask a question below.")
+    print("Tip: press Ctrl+C to stop an answer early.")
+
     while True:
         try:
             q = input("\n> ").strip()
