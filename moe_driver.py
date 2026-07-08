@@ -32,6 +32,37 @@ SYSTEM = {0: CALC, 1: CALC}             # per-id system prompt; extend later
 SERVER_DOWN_HINT = ("\nThe AI server isn't running. "
                     "Double-click START HERE.bat first, then try again.")
 
+DEFAULT_MAX_TOKENS = 384
+max_tokens = DEFAULT_MAX_TOKENS
+
+
+def handle_command(cmd: str) -> None:
+    """Handle a /command typed at the prompt. Never raises."""
+    global max_tokens
+    parts = cmd.split()
+    if parts[0].lower() != "/limit":
+        print("Unknown command. Available: /limit N  "
+              "(sets the max answer length, default "
+              f"{DEFAULT_MAX_TOKENS})")
+        return
+    if len(parts) == 1:
+        print(f"Current output limit: {max_tokens} tokens. "
+              f"Usage: /limit 200")
+        return
+    try:
+        n = int(parts[1])
+    except ValueError:
+        print(f"'{parts[1]}' is not a number. Usage: /limit 200")
+        return
+    if n < 16 or n > 4096:
+        print("Please pick a limit between 16 and 4096.")
+        return
+    if n < 150:
+        print("Warning: below ~150, long correct answers may get cut off "
+              f"before they finish — {DEFAULT_MAX_TOKENS} is the safe default.")
+    max_tokens = n
+    print(f"Output limit set to {max_tokens} tokens.")
+
 print("Loading router + embedder...")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 router = joblib.load(hf_hub_download(ROUTER, "router.joblib"))
@@ -73,7 +104,7 @@ def answer(q: str) -> tuple[int, str]:
     resp = requests.post(f"{SERVER}/v1/chat/completions", json={
         "messages": [{"role": "system", "content": SYSTEM[idx]},
                      {"role": "user",   "content": q}],
-        "max_tokens": 384, "temperature": 0.0, "stream": True,
+        "max_tokens": max_tokens, "temperature": 0.0, "stream": True,
     }, stream=True, timeout=600)
     resp.raise_for_status()
 
@@ -118,6 +149,7 @@ if __name__ == "__main__":
     print("   Convert 1994 to Roman numerals")
     print("\033[91mTip: press Ctrl+C to stop an answer early.\033[0m "
           "Close the window when you are done.")
+    print(f"Type /limit 200 to shorten answers (default {DEFAULT_MAX_TOKENS}).")
 
     while True:
         try:
@@ -125,6 +157,9 @@ if __name__ == "__main__":
         except (KeyboardInterrupt, EOFError):
             break
         if not q:
+            continue
+        if q.startswith("/"):
+            handle_command(q)
             continue
         try:
             answer(q)

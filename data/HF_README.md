@@ -81,7 +81,8 @@ curl -X POST http://localhost:8080/v1/chat/completions -d '{
 For automatic routing (the router reads the question and picks the expert),
 use `moe_driver.py` from the GitHub repo together with
 [UlukaDev/bitnet-moe-router](https://huggingface.co/UlukaDev/bitnet-moe-router) —
-it streams answers live and Ctrl+C cancels an answer without quitting.
+it streams answers live, Ctrl+C cancels an answer without quitting, and
+`/limit N` adjusts the max answer length (default 384).
 Note the router expects `normalize_embeddings=True` when encoding.
 
 ## ⚠️ Never merge these adapters into the base
